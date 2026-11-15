@@ -1,0 +1,7 @@
+# Keenable Search plugin configuration
+# Optional key. Leave empty to use KEENABLE_API_KEY from Agent Zero secrets / env,
+# or the keyless public endpoint if neither is set.
+api_key: ""
+results: 10        # max results returned to the agent
+timeout: 15        # HTTP timeout in seconds
+fallback_to_searxng: true   # on a rate limit (HTTP 429), run the built-in SearXNG search instead
