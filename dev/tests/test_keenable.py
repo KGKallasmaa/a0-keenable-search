@@ -43,8 +43,9 @@ class MockHTTP:
             def __init__(self, *a, **k):
                 pass
 
-            def post(self, url, json=None, headers=None):
-                harness.calls.append(types.SimpleNamespace(url=url, json=json, headers=headers))
+            def post(self, url, json=None, headers=None, allow_redirects=True):
+                harness.calls.append(types.SimpleNamespace(url=url, json=json, headers=headers,
+                                                           allow_redirects=allow_redirects))
                 return _Resp(harness.status, harness.payload, harness.body)
 
             async def close(self):
@@ -145,7 +146,8 @@ async def test_rate_limit_falls_back_to_searxng():
 async def test_http_error_and_empty():
     with MockHTTP(status=500, body="boom"):
         res = await tool.KeenableSearch(agent=Agent()).execute(query="q")
-    assert res.message == "Keenable search failed: HTTP 500 boom"
+    assert res.message == "Keenable search failed: HTTP 500"
+    assert "boom" not in res.message
     with MockHTTP(payload={"results": []}):
         res = await tool.KeenableSearch(agent=Agent()).execute(query="q")
     assert res.message == "No results from Keenable."
@@ -159,3 +161,15 @@ async def test_http_error_and_empty():
 async def test_live_keyless():
     res = await client.search("agent zero framework", count=3)
     assert res.results and all(r.url.startswith("http") for r in res.results)
+
+
+@pytest.mark.asyncio
+async def test_redirects_not_followed_and_not_leaked():
+    plugins_mod.CONFIG = {"api_key": "secret-key"}
+    with MockHTTP(status=307, body="moved") as http:
+        res = await tool.KeenableSearch(agent=Agent()).execute(query="q")
+    assert http.calls[0].allow_redirects is False
+    assert res.message == "Keenable search failed: unexpected redirect (HTTP 307)"
+    with MockHTTP(payload={"results": []}) as http:
+        await client.search("q")
+    assert http.calls[0].allow_redirects is False

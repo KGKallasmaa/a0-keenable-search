@@ -80,15 +80,18 @@ async def search(
     own = session is None
     sess = session or aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout))
     try:
-        async with sess.post(url, json=body, headers=headers) as resp:
+        # Never follow redirects: aiohttp would resend X-API-Key to the new host.
+        async with sess.post(url, json=body, headers=headers, allow_redirects=False) as resp:
             if resp.status == 429:
                 raise KeenableRateLimited(LIMIT_MESSAGE)
+            if 300 <= resp.status < 400:
+                raise KeenableError(f"Keenable search failed: unexpected redirect (HTTP {resp.status})")
             if resp.status >= 400:
-                text = (await resp.text())[:300]
-                raise KeenableError(f"Keenable search failed: HTTP {resp.status} {text}".strip())
+                # Status only: the raw API error body stays out of the chat history.
+                raise KeenableError(f"Keenable search failed: HTTP {resp.status}")
             data = await resp.json(content_type=None)
     except aiohttp.ClientError as e:
-        raise KeenableError(f"Keenable search failed: {e}") from e
+        raise KeenableError(f"Keenable search failed: {type(e).__name__}") from e
     finally:
         if own:
             await sess.close()
